@@ -23,24 +23,24 @@ class LightGCN(object):
     def __init__(self, data_config, pretrain_data):
         # argument settings
         self.model_type = 'LightGCN'
-        self.adj_type = args.adj_type
-        self.alg_type = args.alg_type
+        self.adj_type = args.adj_type             #邻接矩阵的类型（plain, norm, mean）
+        self.alg_type = args.alg_type             #图卷积层的类型
         self.pretrain_data = pretrain_data
         self.n_users = data_config['n_users']
         self.n_items = data_config['n_items']
-        self.n_fold = 100
+        self.n_fold = 100                         #交叉验证
         self.norm_adj = data_config['norm_adj']
-        self.n_nonzero_elems = self.norm_adj.count_nonzero()
-        self.lr = args.lr
-        self.emb_dim = args.embed_size
-        self.batch_size = args.batch_size
-        self.weight_size = eval(args.layer_size)
-        self.n_layers = len(self.weight_size)
-        self.regs = eval(args.regs)
-        self.decay = self.regs[0]
-        self.log_dir=self.create_model_str()
-        self.verbose = args.verbose
-        self.Ks = eval(args.Ks)
+        self.n_nonzero_elems = self.norm_adj.count_nonzero()#非0元素个数，直接连接节点的个数？
+        self.lr = args.lr                                   #学习率
+        self.emb_dim = args.embed_size                      #嵌入大小
+        self.batch_size = args.batch_size                   #每次取出的数目
+        self.weight_size = eval(args.layer_size)            #每层输出的size
+        self.n_layers = len(self.weight_size)               #
+        self.regs = eval(args.regs)                         #正则化系数
+        self.decay = self.regs[0]                           #衰减系数？？
+        self.log_dir=self.create_model_str()                #输出日志？？？
+        self.verbose = args.verbose                         #评估模型的间隔
+        self.Ks = eval(args.Ks)                             #Top k(s) recommend
 
 
         '''
@@ -48,15 +48,20 @@ class LightGCN(object):
         Create Placeholder for Input Data & Dropout.
         '''
         # placeholder definition
+        #用户，正样本item，负样本item
         self.users = tf.placeholder(tf.int32, shape=(None,))
         self.pos_items = tf.placeholder(tf.int32, shape=(None,))
         self.neg_items = tf.placeholder(tf.int32, shape=(None,))
         
+        #节点丢弃
         self.node_dropout_flag = args.node_dropout_flag
         self.node_dropout = tf.placeholder(tf.float32, shape=[None])
         self.mess_dropout = tf.placeholder(tf.float32, shape=[None])
+        
+        #创建一个命名空间，使得可以有相同的变量名存在于不同的命名空间
         with tf.name_scope('TRAIN_LOSS'):
             self.train_loss = tf.placeholder(tf.float32)
+            #添加标量信息以统计
             tf.summary.scalar('train_loss', self.train_loss)
             self.train_mf_loss = tf.placeholder(tf.float32)
             tf.summary.scalar('train_mf_loss', self.train_mf_loss)
@@ -64,15 +69,17 @@ class LightGCN(object):
             tf.summary.scalar('train_emb_loss', self.train_emb_loss)
             self.train_reg_loss = tf.placeholder(tf.float32)
             tf.summary.scalar('train_reg_loss', self.train_reg_loss)
+        #tf.get_collection取出指定命名空间的元素，这里有四个
         self.merged_train_loss = tf.summary.merge(tf.get_collection(tf.GraphKeys.SUMMARIES, 'TRAIN_LOSS'))
         
         
+        #训练的recall和ndcg
         with tf.name_scope('TRAIN_ACC'):
             self.train_rec_first = tf.placeholder(tf.float32)
-            #record for top(Ks[0])
+            #record for top(Ks[0])  top1推荐的准确度？
             tf.summary.scalar('train_rec_first', self.train_rec_first)
             self.train_rec_last = tf.placeholder(tf.float32)
-            #record for top(Ks[-1])
+            #record for top(Ks[-1]) topk推荐的准确度？
             tf.summary.scalar('train_rec_last', self.train_rec_last)
             self.train_ndcg_first = tf.placeholder(tf.float32)
             tf.summary.scalar('train_ndcg_first', self.train_ndcg_first)
@@ -116,6 +123,7 @@ class LightGCN(object):
             2. gcn:  defined in 'Semi-Supervised Classification with Graph Convolutional Networks', ICLR2018;
             3. gcmc: defined in 'Graph Convolutional Matrix Completion', KDD2018;
         """
+        #选择卷积层的类型
         if self.alg_type in ['lightgcn']:
             self.ua_embeddings, self.ia_embeddings = self._create_lightgcn_embed()
             
@@ -132,9 +140,11 @@ class LightGCN(object):
         *********************************************************
         Establish the final representations for user-item pairs in batch.
         """
+        #获得user，pos_item，neg_item对应的embedding
         self.u_g_embeddings = tf.nn.embedding_lookup(self.ua_embeddings, self.users)
         self.pos_i_g_embeddings = tf.nn.embedding_lookup(self.ia_embeddings, self.pos_items)
         self.neg_i_g_embeddings = tf.nn.embedding_lookup(self.ia_embeddings, self.neg_items)
+        
         self.u_g_embeddings_pre = tf.nn.embedding_lookup(self.weights['user_embedding'], self.users)
         self.pos_i_g_embeddings_pre = tf.nn.embedding_lookup(self.weights['item_embedding'], self.pos_items)
         self.neg_i_g_embeddings_pre = tf.nn.embedding_lookup(self.weights['item_embedding'], self.neg_items)
@@ -164,7 +174,9 @@ class LightGCN(object):
 
 
     def _init_weights(self):
+        #字典存储user和item的初始embedding
         all_weights = dict()
+        #tf.random_normal_initializer生成一组符合标准正态分布的 tensor 对象，stddev是正态分布的标准差。
         initializer = tf.random_normal_initializer(stddev=0.01) #tf.contrib.layers.xavier_initializer()
         if self.pretrain_data is None:
             all_weights['user_embedding'] = tf.Variable(initializer([self.n_users, self.emb_dim]), name='user_embedding')
@@ -196,6 +208,8 @@ class LightGCN(object):
                 initializer([1, self.weight_size_list[k+1]]), name='b_mlp_%d' % k)
 
         return all_weights
+    
+    #邻接矩阵分割
     def _split_A_hat(self, X):
         A_fold_hat = []
 
@@ -210,6 +224,7 @@ class LightGCN(object):
             A_fold_hat.append(self._convert_sp_mat_to_sp_tensor(X[start:end]))
         return A_fold_hat
 
+    #节点丢弃
     def _split_A_hat_node_dropout(self, X):
         A_fold_hat = []
 
