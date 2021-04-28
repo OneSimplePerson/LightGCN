@@ -166,7 +166,7 @@ class LightGCN(object):
 
         self.opt = tf.train.AdamOptimizer(learning_rate=self.lr).minimize(self.loss)
     
-    
+    #仅仅返回模型的信息
     def create_model_str(self):
         log_dir = '/' + self.alg_type+'/layers_'+str(self.n_layers)+'/dim_'+str(self.emb_dim)
         log_dir+='/'+args.dataset+'/lr_' + str(self.lr) + '/reg_' + str(self.decay)
