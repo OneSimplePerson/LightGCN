@@ -241,6 +241,13 @@ class LightGCN(object):
             A_fold_hat.append(self._dropout_sparse(temp, 1 - self.node_dropout[0], n_nonzero_temp))
 
         return A_fold_hat
+    
+    #求attention_score
+    def _get_attention_score(self,A_sequence):
+        W_q = self.W_q
+        W_k = self.W_k
+        W_v = self.W_v
+        
 
     def _create_lightgcn_embed(self):
         if self.node_dropout_flag:
@@ -257,13 +264,15 @@ class LightGCN(object):
             for f in range(self.n_fold):
                 temp_embed.append(tf.sparse_tensor_dense_matmul(A_fold_hat[f], ego_embeddings))
 
+            #在行的维度进行拼接
             side_embeddings = tf.concat(temp_embed, 0)
             ego_embeddings = side_embeddings
-            
+            #单纯的加入列表
             all_embeddings += [ego_embeddings]
             
-            
+        #矩阵拼接，在列的维度拼接   
         all_embeddings=tf.stack(all_embeddings,1)
+        #在axis=1的维度求平均值，降维
         all_embeddings=tf.reduce_mean(all_embeddings,axis=1,keepdims=False)
         
         
